@@ -1,54 +1,21 @@
 import React from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, ScrollView } from 'react-native';
 import YoutubePlayer from 'react-native-youtube-iframe';
-import type { AnimeCard } from './SwipeDeck';
+import type { AnimeCard } from './types';
 
-export default function TrailerCard({
-  title,
-  genres,
-  year,
-  synopsis,
-  trailerId
-}: AnimeCard) {
+export default function TrailerCard({ title, genres, year, synopsis, trailerId }: AnimeCard) {
   return (
-    <View
-      style={{
-        padding: 16,
-        backgroundColor: '#fff',
-        borderRadius: 8,
-        elevation: 3,
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        shadowOffset: { width: 0, height: 2 }
-      }}
-    >
-      <Text style={{ fontSize: 20, fontWeight: 'bold' }}>
-        {title} {year ? `(${year})` : ''}
-      </Text>
-      {genres?.length ? (
-        <Text style={{ color: '#666', marginBottom: 4 }}>
-          {genres.join(', ')}
+    <View style={{ flex: 0.75, borderRadius: 12, backgroundColor: '#fff', overflow: 'hidden', elevation: 5 }}>
+      {trailerId && <YoutubePlayer height={220} play={false} videoId={trailerId} />}
+      <ScrollView style={{ padding: 16 }}>
+        <Text style={{ fontSize: 22, fontWeight: 'bold' }}>
+          {title} {year ? `(${year})` : ''}
         </Text>
-      ) : null}
-      {trailerId && (
-        <YoutubePlayer height={200} play={false} videoId={trailerId} />
-      )}
-      {synopsis && (
-        <View
-          style={{
-            marginTop: 12,
-            padding: 8,
-            backgroundColor: '#f0f0f0',
-            borderRadius: 6
-          }}
-        >
-          <Text style={{ fontWeight: '600' }}>
-            Why this was recommended:
-          </Text>
-          <Text style={{ marginTop: 4 }}>{synopsis}</Text>
-        </View>
-      )}
+        {genres?.length ? (
+          <Text style={{ color: '#666', marginVertical: 4 }}>{genres.join(', ')}</Text>
+        ) : null}
+        {synopsis && <Text style={{ marginTop: 8, fontSize: 14, color: '#333' }}>{synopsis}</Text>}
+      </ScrollView>
     </View>
   );
 }

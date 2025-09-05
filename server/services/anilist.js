@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
-import { getCachedRecommendations, setCachedRecommendations } from './utils/cache.js';
+import { getCachedRecommendations, setCachedRecommendations } from '../utils/cashe.js';
+import { getWatchedIds } from '../utils/db.js';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
 
@@ -37,6 +38,7 @@ export async function getRecommendationsById(id) {
         recommendations {
           nodes {
             mediaRecommendation {
+              id
               title { romaji english }
               seasonYear
               genres
@@ -49,7 +51,9 @@ export async function getRecommendationsById(id) {
   `;
   const data = await anilistQuery(query, { id });
   const nodes = data?.Media?.recommendations?.nodes || [];
+
   return nodes.map(({ mediaRecommendation }) => ({
+    id: mediaRecommendation.id,
     title: mediaRecommendation.title.english || mediaRecommendation.title.romaji,
     year: mediaRecommendation.seasonYear || 'Unknown',
     genres: mediaRecommendation.genres || [],
@@ -67,4 +71,11 @@ export async function getRecommendedAnime(seedTitle) {
   const recs = await getRecommendationsById(id);
   setCachedRecommendations(seedTitle, recs);
   return recs;
+}
+
+// New: returns recs filtered by watched IDs
+export async function getFilteredRecommendations(seedTitle) {
+  const recs = await getRecommendedAnime(seedTitle);
+  const watchedIds = getWatchedIds(); // persistent SQLite
+  return recs.filter(r => !watchedIds.includes(r.id));
 }

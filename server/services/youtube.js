@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { getCachedTrailer, setCachedTrailer } from './utils/cache.js';
+import { getCachedTrailer, setCachedTrailer } from '../utils/cashe.js';
 
 const YT_API_KEY = process.env.YOUTUBE_API_KEY;
 
