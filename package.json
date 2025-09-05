@@ -1,0 +1,15 @@
+{
+  "name": "anime-recs-root",
+  "private": true,
+  "scripts": {
+  "dev": "concurrently \"npm run dev --prefix server\" \"cd app && npx expo start\"",
+  "dev:clear": "concurrently \"npm run dev --prefix server\" \"cd app && npx expo start --clear\""
+  },
+  "dependencies": {
+    "react-native-deck-swiper": "^2.0.19",
+    "react-native-youtube-iframe": "^2.4.1"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

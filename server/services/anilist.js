@@ -1,5 +1,34 @@
 import fetch from 'node-fetch';
 
+const ANILIST_URL = 'https://graphql.anilist.co';
+
+/**
+ * Helper to send a GraphQL request to AniList
+ */
+async function anilistQuery(query, variables = {}) {
+  try {
+    const res = await fetch(ANILIST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables })
+    });
+
+    if (!res.ok) {
+      throw new Error(`AniList API error: ${res.status} ${res.statusText}`);
+    }
+
+    const json = await res.json();
+    if (json.errors) {
+      console.error('AniList returned errors:', json.errors);
+      return null;
+    }
+    return json.data;
+  } catch (err) {
+    console.error('❌ AniList request failed:', err);
+    return null;
+  }
+}
+
 /**
  * Searches AniList for a title and returns its ID.
  */
@@ -12,14 +41,8 @@ export async function getAnimeId(title) {
     }
   `;
 
-  const res = await fetch('https://graphql.anilist.co', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables: { search: title } })
-  });
-
-  const json = await res.json();
-  return json?.data?.Media?.id || null;
+  const data = await anilistQuery(query, { search: title });
+  return data?.Media?.id || null;
 }
 
 /**
@@ -43,14 +66,8 @@ export async function getRecommendationsById(id) {
     }
   `;
 
-  const res = await fetch('https://graphql.anilist.co', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables: { id } })
-  });
-
-  const json = await res.json();
-  const nodes = json?.data?.Media?.recommendations?.nodes || [];
+  const data = await anilistQuery(query, { id });
+  const nodes = data?.Media?.recommendations?.nodes || [];
 
   return nodes.map(({ mediaRecommendation }) => ({
     title: mediaRecommendation.title.english || mediaRecommendation.title.romaji,
@@ -69,6 +86,5 @@ export async function getRecommendedAnime(seedTitle) {
     console.warn(`⚠️ AniList ID not found for "${seedTitle}"`);
     return [];
   }
-
   return await getRecommendationsById(id);
 }
