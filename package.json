@@ -2,8 +2,8 @@
   "name": "anime-recs-root",
   "private": true,
   "scripts": {
-  "dev": "concurrently \"npm run dev --prefix server\" \"cd app && npx expo start\"",
-  "dev:clear": "concurrently \"npm run dev --prefix server\" \"cd app && npx expo start --clear\""
+    "dev": "concurrently \"npm run dev --prefix server\" \"cd frontend && npx expo start\"",
+    "dev:clear": "concurrently \"npm run dev --prefix server\" \"cd frontend && npx expo start --clear\""
   },
   "dependencies": {
     "react-native-deck-swiper": "^2.0.19",

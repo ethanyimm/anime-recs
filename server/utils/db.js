@@ -3,7 +3,9 @@ import path from 'path';
 
 const db = new Database(path.join(process.cwd(), 'cache.db'));
 
+// --------------------
 // Tables
+// --------------------
 db.prepare(`
   CREATE TABLE IF NOT EXISTS liked_anime (
     id INTEGER PRIMARY KEY,
@@ -24,7 +26,17 @@ db.prepare(`
   )
 `).run();
 
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS disliked_anime (
+    id INTEGER PRIMARY KEY,
+    title TEXT,
+    disliked_at INTEGER
+  )
+`).run();
+
+// --------------------
 // Watched helpers
+// --------------------
 export function getWatchedIds() {
   const rows = db.prepare(`SELECT id FROM watched_anime`).all();
   return rows.map(r => r.id);
@@ -37,7 +49,9 @@ export function markWatched(item) {
   `).run(item.id, item.title, Date.now());
 }
 
+// --------------------
 // Liked helpers
+// --------------------
 export function likeAnime(item) {
   db.prepare(`
     INSERT OR REPLACE INTO liked_anime (id, title, year, genres, synopsis, trailer_id, liked_at)
@@ -67,4 +81,23 @@ export function getLikedAnime() {
     synopsis: r.synopsis,
     trailerId: r.trailer_id
   }));
+}
+
+// --------------------
+// Disliked helpers
+// --------------------
+export function dislikeAnime(item) {
+  db.prepare(`
+    INSERT OR REPLACE INTO disliked_anime (id, title, disliked_at)
+    VALUES (?, ?, ?)
+  `).run(item.id, item.title, Date.now());
+}
+
+export function getDislikedIds() {
+  const rows = db.prepare(`SELECT id FROM disliked_anime`).all();
+  return rows.map(r => r.id);
+}
+
+export function removeDislike(id) {
+  db.prepare(`DELETE FROM disliked_anime WHERE id = ?`).run(id);
 }

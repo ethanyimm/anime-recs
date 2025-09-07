@@ -1,9 +1,12 @@
 import fetch from 'node-fetch';
 import { getCachedRecommendations, setCachedRecommendations } from '../utils/cashe.js';
-import { getWatchedIds } from '../utils/db.js';
+import { getWatchedIds, getDislikedIds } from '../utils/db.js';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
 
+// --------------------
+// Generic AniList query helper
+// --------------------
 async function anilistQuery(query, variables = {}) {
   try {
     const res = await fetch(ANILIST_URL, {
@@ -21,6 +24,39 @@ async function anilistQuery(query, variables = {}) {
   }
 }
 
+// --------------------
+// Get top 100 currently airing anime
+// --------------------
+export async function getTop100CurrentAnime() {
+  const query = `
+    query {
+      Page(perPage: 100) {
+        media(type: ANIME, sort: POPULARITY_DESC, status: RELEASING) {
+          id
+          title {
+            romaji
+          }
+        }
+      }
+    }
+  `;
+
+  const res = await fetch(ANILIST_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query })
+  });
+
+  const json = await res.json();
+  return json.data.Page.media.map(m => ({
+    id: m.id,
+    title: m.title.romaji
+  }));
+}
+
+// --------------------
+// Get AniList ID for a title
+// --------------------
 export async function getAnimeId(title) {
   const query = `
     query ($search: String) {
@@ -31,6 +67,9 @@ export async function getAnimeId(title) {
   return data?.Media?.id || null;
 }
 
+// --------------------
+// Get recommendations by AniList ID
+// --------------------
 export async function getRecommendationsById(id) {
   const query = `
     query ($id: Int) {
@@ -61,6 +100,9 @@ export async function getRecommendationsById(id) {
   }));
 }
 
+// --------------------
+// Get recommendations for a seed title (with caching)
+// --------------------
 export async function getRecommendedAnime(seedTitle) {
   const cached = getCachedRecommendations(seedTitle);
   if (cached) return cached;
@@ -73,9 +115,14 @@ export async function getRecommendedAnime(seedTitle) {
   return recs;
 }
 
-// New: returns recs filtered by watched IDs
+// --------------------
+// Filtered recommendations (exclude watched + disliked)
+// --------------------
 export async function getFilteredRecommendations(seedTitle) {
   const recs = await getRecommendedAnime(seedTitle);
-  const watchedIds = getWatchedIds(); // persistent SQLite
-  return recs.filter(r => !watchedIds.includes(r.id));
+  const watchedIds = getWatchedIds();
+  const dislikedIds = getDislikedIds();
+  const blockedIds = new Set([...watchedIds, ...dislikedIds]);
+
+  return recs.filter(r => !blockedIds.has(r.id));
 }
