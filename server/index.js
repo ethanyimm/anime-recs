@@ -20,47 +20,83 @@ app.use(express.json());
 // --------------------
 // Recommendations (Search + FYP)
 // --------------------
+import { getTopCurrentAnime, getTrendingAnime, getFilteredRecommendations } from './services/anilist.js';
+import { getTrailerId } from './services/youtube.js';
+import { getLikedAnime, getDislikedIds, getWatchedIds } from './utils/db.js';
+
 app.get('/api/recommendations', async (req, res) => {
   try {
-    const { title } = req.query;
+    const { title, page = 1, limit = 8, mode = 'popular' } = req.query;
     const dislikedIds = getDislikedIds();
     const watchedIds = getWatchedIds();
     const blockedIds = new Set([...dislikedIds, ...watchedIds]);
 
+    // --------------------
     // FYP mode: no title provided
+    // --------------------
     if (!title) {
-      const topAnime = await getTop100CurrentAnime();
-      const randomTitles = topAnime
-        .filter(a => !blockedIds.has(a.id))
-        .sort(() => 0.5 - Math.random())
-        .slice(0, 8);
+      // Fetch from AniList
+      let animeList = mode === 'trending'
+        ? await getTrendingAnime(Number(page), Number(limit) * 3) // fetch extra for filtering
+        : await getTopCurrentAnime(Number(page), Number(limit) * 3);
+
+      // Remove blocked
+      animeList = animeList.filter(a => !blockedIds.has(a.id));
+
+      // Genre-aware bias
+      const liked = getLikedAnime();
+      const likedGenres = [...new Set(liked.flatMap(a => a.genres))];
+      if (likedGenres.length) {
+        animeList = animeList.filter(a =>
+          a.genres?.some(g => likedGenres.includes(g))
+        );
+      }
+
+      // Pagination slice
+      const start = (Number(page) - 1) * Number(limit);
+      const paged = animeList.slice(start, start + Number(limit));
 
       const items = await Promise.all(
-        randomTitles.map(async a => ({
+        paged.map(async a => ({
           id: a.id,
           title: a.title,
-          year: '',
-          genres: [],
-          synopsis: '',
+          year: a.year,
+          genres: a.genres,
+          synopsis: a.synopsis,
           trailerId: await getTrailerId(a.title)
         }))
       );
 
-      return res.json({ items });
+      return res.json({
+        page: Number(page),
+        limit: Number(limit),
+        hasMore: start + Number(limit) < animeList.length,
+        items
+      });
     }
 
+    // --------------------
     // Search mode
+    // --------------------
     const recs = await getFilteredRecommendations(title);
     const filtered = recs.filter(r => !blockedIds.has(r.id));
 
+    const start = (Number(page) - 1) * Number(limit);
+    const paged = filtered.slice(start, start + Number(limit));
+
     const items = await Promise.all(
-      filtered.map(async r => ({
+      paged.map(async r => ({
         ...r,
         trailerId: await getTrailerId(r.title)
       }))
     );
 
-    res.json({ items });
+    res.json({
+      page: Number(page),
+      limit: Number(limit),
+      hasMore: start + Number(limit) < filtered.length,
+      items
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to get recommendations' });

@@ -1,95 +1,90 @@
 import React, { useRef, useState } from 'react';
-import { View, TouchableOpacity, Dimensions, StyleSheet } from 'react-native';
+import { View, Dimensions, StyleSheet, TouchableOpacity } from 'react-native';
 import Carousel from 'react-native-reanimated-carousel';
-import Animated, { withSpring } from 'react-native-reanimated';
-import { Heart, X, Bookmark } from 'lucide-react-native';
 import TrailerCard from './TrailerCard';
 import type { AnimeCard } from './types';
 import { colors } from '@/constants/theme';
+import { Heart, X } from 'lucide-react-native';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
+const VIDEO_HEIGHT = Math.round((width * 9) / 16); // match TrailerCard
+const INFO_HEIGHT = 80;
 
 type SwipeDeckProps = {
   cards: AnimeCard[];
-  onSave?: (anime: AnimeCard) => void;
   onLike?: (anime: AnimeCard) => void;
   onDislike?: (anime: AnimeCard) => void;
   onSkip?: (anime: AnimeCard) => void;
+  onCardChange?: (index: number) => void; // NEW
 };
 
-export default function SwipeDeck({ cards, onSave, onLike, onDislike }: SwipeDeckProps) {
+export default function SwipeDeck({
+  cards,
+  onLike,
+  onDislike,
+  onSkip,
+  onCardChange
+}: SwipeDeckProps) {
   const carouselRef = useRef<any>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  const handleNext = () => {
+    if (currentIndex < cards.length - 1) {
+      carouselRef.current?.next();
+    } else {
+      onSkip?.(cards[currentIndex]);
+    }
+  };
 
   return (
     <View style={{ flex: 1 }}>
       <Carousel
         ref={carouselRef}
-        width={width * 0.92}
-        height={height * 0.68}
+        width={width}
+        height={VIDEO_HEIGHT + INFO_HEIGHT}
         data={cards}
-        renderItem={({ item, index }) => {
-          const isActive = index === currentIndex;
-          return (
-            <Animated.View
-              style={[
-                styles.cardContainer,
-                { transform: [{ scale: withSpring(isActive ? 1 : 0.95) }] },
-              ]}
-            >
-              <TrailerCard {...item} />
-            </Animated.View>
-          );
+        renderItem={({ item, index }) => (
+          <View style={styles.cardContainer}>
+            <TrailerCard {...item} isActive={index === currentIndex} />
+          </View>
+        )}
+        onSnapToItem={(index) => {
+          setCurrentIndex(index);
+          onCardChange?.(index); // 🔹 Notify FeedScreen
         }}
-        onSnapToItem={(index) => setCurrentIndex(index)}
         loop={false}
         style={{ alignSelf: 'center' }}
-        mode="horizontal-stack"
-        modeConfig={{
-          snapDirection: 'left',
-          stackInterval: 18,
-        }}
       />
 
-      {/* Action Buttons */}
-      <View style={styles.controls}>
-        <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colors.danger }]}
-          onPress={() => {
-            onDislike?.(cards[currentIndex]);
-            carouselRef.current?.next();
-          }}
-        >
-          <X size={28} color="#fff" />
-        </TouchableOpacity>
+      {cards.length > 0 && (
+        <View style={styles.buttonsContainer}>
+          <TouchableOpacity
+            onPress={() => {
+              onDislike?.(cards[currentIndex]);
+              handleNext();
+            }}
+            style={[styles.button, styles.red]}
+          >
+            <X size={26} color="#fff" />
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colors.border }]}
-          onPress={() => {
-            const card = cards[currentIndex];
-            if (card) onSave?.(card);
-          }}
-        >
-          <Bookmark size={28} color={colors.textPrimary} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colors.success }]}
-          onPress={() => {
-            onLike?.(cards[currentIndex]);
-            carouselRef.current?.next();
-          }}
-        >
-          <Heart size={28} color="#fff" />
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            onPress={() => {
+              onLike?.(cards[currentIndex]);
+              handleNext();
+            }}
+            style={[styles.button, styles.green]}
+          >
+            <Heart size={26} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   cardContainer: {
-    flex: 1,
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: colors.card,
@@ -99,21 +94,25 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
   },
-  controls: {
+  buttonsContainer: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
     flexDirection: 'row',
-    justifyContent: 'space-evenly',
-    paddingVertical: 20,
+    gap: 12,
   },
-  actionButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  button: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 3,
+    elevation: 4,
     shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
   },
+  red: { backgroundColor: '#ff4757' },
+  green: { backgroundColor: '#2ed573' },
 });

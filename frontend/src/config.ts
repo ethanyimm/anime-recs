@@ -8,5 +8,5 @@
 
   export const BASE_URL =
   process.env.NODE_ENV === 'development'
-    ? 'https://failing-formal-fears-trademark.trycloudflare.com'
+    ? 'https://moreover-buying-operators-shoot.trycloudflare.com'
     : 'https://your-deployed-backend.com';
