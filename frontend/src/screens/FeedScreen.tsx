@@ -123,7 +123,7 @@ export default function FeedScreen() {
             No recommendations found. Try another title.
           </Text>
         ) : (
-          <View style={{ flex: 1 }}>
+          <View style={styles.swipeContainer}>
             <SwipeDeck
               cards={cards}
               onLike={like}
@@ -173,5 +173,9 @@ const styles = StyleSheet.create({
     marginTop: 20,
     color: colors.textSecondary,
     fontSize: 16,
+  },
+  swipeContainer: {
+    flex: 1,
+    minHeight: 0, // Prevents flex issues
   },
 });

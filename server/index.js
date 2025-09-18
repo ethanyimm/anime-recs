@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { getFilteredRecommendations, getTop100CurrentAnime } from './services/anilist.js';
+import { getTopCurrentAnime, getTrendingAnime, getFilteredRecommendations } from './services/anilist.js';
 import { enrichRecommendations } from './services/chatgpt.js';
 import { getTrailerId } from './services/youtube.js';
 import {
@@ -16,13 +16,6 @@ import {
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-// --------------------
-// Recommendations (Search + FYP)
-// --------------------
-import { getTopCurrentAnime, getTrendingAnime, getFilteredRecommendations } from './services/anilist.js';
-import { getTrailerId } from './services/youtube.js';
-import { getLikedAnime, getDislikedIds, getWatchedIds } from './utils/db.js';
 
 app.get('/api/recommendations', async (req, res) => {
   try {

@@ -1,14 +1,17 @@
 import React, { useRef, useState } from 'react';
-import { View, Dimensions, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Dimensions, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import Carousel from 'react-native-reanimated-carousel';
 import TrailerCard from './TrailerCard';
 import type { AnimeCard } from './types';
 import { colors } from '@/constants/theme';
 import { Heart, X } from 'lucide-react-native';
 
-const { width } = Dimensions.get('window');
-const VIDEO_HEIGHT = Math.round((width * 9) / 16); // match TrailerCard
-const INFO_HEIGHT = 80;
+const { width, height } = Dimensions.get('window');
+// Use same responsive height calculation as TrailerCard
+const VIDEO_HEIGHT = Platform.OS === 'web' 
+  ? Math.min(Math.round((width * 9) / 16), height * 0.6) // Limit to 60% of screen height on web
+  : Math.round((width * 9) / 16); // Normal calculation for mobile
+const INFO_HEIGHT = 80; // match TrailerCard titleSection height
 
 type SwipeDeckProps = {
   cards: AnimeCard[];
@@ -41,7 +44,7 @@ export default function SwipeDeck({
       <Carousel
         ref={carouselRef}
         width={width}
-        height={VIDEO_HEIGHT + INFO_HEIGHT}
+        height={Platform.OS === 'web' ? height * 0.7 : VIDEO_HEIGHT + INFO_HEIGHT}
         data={cards}
         renderItem={({ item, index }) => (
           <View style={styles.cardContainer}>
@@ -93,6 +96,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
+    flex: 1, // Take up available space
+    width: width, // Fill full width
+    // Web-specific fixes for video display
+    ...(Platform.OS === 'web' && {
+      maxHeight: height * 0.7, // Limit card height on web
+    }),
   },
   buttonsContainer: {
     position: 'absolute',
