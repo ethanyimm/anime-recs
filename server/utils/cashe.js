@@ -1,4 +1,4 @@
-// backend/cache.js
+// utils/cashe.js
 import Database from 'better-sqlite3';
 import path from 'path';
 
@@ -28,31 +28,58 @@ function isExpired(updatedAt) {
 }
 
 export function getCachedRecommendations(title) {
-  const row = db.prepare(`SELECT data, updated_at FROM recommendations WHERE title = ?`)
-    .get(title.toLowerCase());
-  if (!row) return null;
-  if (isExpired(row.updated_at)) return null; // expired
-  return JSON.parse(row.data);
+  const key = title.toLowerCase();
+  const row = db.prepare(`SELECT data, updated_at FROM recommendations WHERE title = ?`).get(key);
+
+  if (!row) {
+    console.log(`❌ Cache miss: ${key}`);
+    return null;
+  }
+  if (isExpired(row.updated_at)) {
+    console.log(`⚠️ Cache expired: ${key}`);
+    return null;
+  }
+
+  console.log(`✅ Cache hit: ${key}`);
+  try {
+    return JSON.parse(row.data);
+  } catch (err) {
+    console.error(`⚠️ Cache parse error for ${key}:`, err);
+    return null;
+  }
 }
 
 export function setCachedRecommendations(title, data) {
+  const key = title.toLowerCase();
   db.prepare(`
     INSERT OR REPLACE INTO recommendations (title, data, updated_at)
     VALUES (?, ?, ?)
-  `).run(title.toLowerCase(), JSON.stringify(data), Date.now());
+  `).run(key, JSON.stringify(data), Date.now());
+  console.log(`💾 Cached recommendations for: ${key}`);
 }
 
 export function getCachedTrailer(title) {
-  const row = db.prepare(`SELECT trailer_id, updated_at FROM trailers WHERE title = ?`)
-    .get(title.toLowerCase());
-  if (!row) return null;
-  if (isExpired(row.updated_at)) return null; // expired
+  const key = title.toLowerCase();
+  const row = db.prepare(`SELECT trailer_id, updated_at FROM trailers WHERE title = ?`).get(key);
+
+  if (!row) {
+    console.log(`❌ Trailer cache miss: ${key}`);
+    return null;
+  }
+  if (isExpired(row.updated_at)) {
+    console.log(`⚠️ Trailer cache expired: ${key}`);
+    return null;
+  }
+
+  console.log(`✅ Trailer cache hit: ${key}`);
   return row.trailer_id;
 }
 
 export function setCachedTrailer(title, trailerId) {
+  const key = title.toLowerCase();
   db.prepare(`
     INSERT OR REPLACE INTO trailers (title, trailer_id, updated_at)
     VALUES (?, ?, ?)
-  `).run(title.toLowerCase(), trailerId, Date.now());
+  `).run(key, trailerId, Date.now());
+  console.log(`💾 Cached trailer for: ${key}`);
 }
