@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Stack, Link } from 'expo-router'; // ✅ Link imported here
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -12,8 +12,8 @@ import {
 import SwipeDeck from '../components/SwipeDeck';
 import type { AnimeCard } from '../components/types';
 import { BASE_URL } from '../config';
-import { Link } from 'expo-router';
-import { colors } from '@/constants/theme';
+import { colors } from '../../constants/theme';
+import { getLang } from '../lang';
 
 export default function FeedScreen() {
   const [input, setInput] = useState('');
@@ -32,14 +32,16 @@ export default function FeedScreen() {
         page: reset ? '1' : String(page),
         limit: '8',
         mode,
+        lang: getLang(),
       });
       if (input.trim()) params.append('title', input.trim());
 
       const res = await fetch(`${BASE_URL}/api/recommendations?${params}`);
       const json = await res.json();
 
-      setCards(prev => reset ? json.items : [...prev, ...json.items]);
-      setHasMore(json.hasMore);
+      const items = Array.isArray(json.items) ? json.items : [];
+      setCards(prev => (reset ? items : [...prev, ...items]));
+      setHasMore(Boolean(json.hasMore));
       setPage(reset ? 2 : page + 1);
     } catch (err) {
       console.error('❌ Failed to load recommendations:', err);
@@ -58,7 +60,7 @@ export default function FeedScreen() {
       await fetch(`${BASE_URL}/api/like`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(anime),
+        body: JSON.stringify({ ...anime, lang: getLang() }),
       });
       ToastAndroid.show(`❤️ Liked ${anime.title}`, ToastAndroid.SHORT);
     } catch (e) {
@@ -71,7 +73,7 @@ export default function FeedScreen() {
       await fetch(`${BASE_URL}/api/dislike`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: anime.id, title: anime.title }),
+        body: JSON.stringify({ id: anime.id, title: anime.title, lang: getLang() }),
       });
       ToastAndroid.show(`👎 Disliked ${anime.title}`, ToastAndroid.SHORT);
     } catch (e) {
@@ -79,9 +81,8 @@ export default function FeedScreen() {
     }
   }
 
-  // Prefetch trigger
   function handleCardChange(index: number) {
-    if (hasMore && index >= cards.length - 2) {
+    if (Array.isArray(cards) && hasMore && index >= cards.length - 2) {
       loadRecommendations(false);
     }
   }
@@ -109,16 +110,23 @@ export default function FeedScreen() {
         </View>
 
         {/* View liked list */}
-        <Link href="./liked" asChild>
+        <Link href="/(tabs)/liked" asChild>
           <TouchableOpacity style={styles.likedButton}>
             <Text style={styles.likedButtonText}>❤️ View Liked</Text>
+          </TouchableOpacity>
+        </Link>
+
+        {/* Settings button */}
+        <Link href="/(tabs)/settings" asChild>
+          <TouchableOpacity style={styles.settingsButton}>
+            <Text style={styles.settingsButtonText}>⚙️ Settings</Text>
           </TouchableOpacity>
         </Link>
 
         {/* Content */}
         {loading && page === 1 ? (
           <ActivityIndicator size="large" style={{ marginTop: 20 }} />
-        ) : cards.length === 0 ? (
+        ) : !Array.isArray(cards) || cards.length === 0 ? (
           <Text style={styles.emptyText}>
             No recommendations found. Try another title.
           </Text>
@@ -165,9 +173,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   likedButtonText: { color: '#fff', fontWeight: 'bold' },
+  settingsButton: {
+    backgroundColor: '#4b7bec',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  settingsButtonText: { color: '#fff', fontWeight: 'bold' },
   emptyText: {
     textAlign: 'center',
     marginTop: 20,
@@ -176,6 +192,6 @@ const styles = StyleSheet.create({
   },
   swipeContainer: {
     flex: 1,
-    minHeight: 0, // Prevents flex issues
+    minHeight: 0,
   },
 });

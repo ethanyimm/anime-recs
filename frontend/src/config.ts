@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 const LAN_IP = '192.168.1.42';
 
 // Change this to your current Cloudflare Tunnel URL when using it
-const CLOUDFLARE_URL = 'https://interpretation-ended-twelve-thinking.trycloudflare.com';
+const CLOUDFLARE_URL = 'https://resistance-chip-kenneth-northwest.trycloudflare.com';
 
 // In dev: 
 // - On web → use localhost

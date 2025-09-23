@@ -1,103 +1,150 @@
 import Database from 'better-sqlite3';
-import path from 'path';
 
-const db = new Database(path.join(process.cwd(), 'cache.db'));
-
-// --------------------
-// Tables
-// --------------------
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS liked_anime (
-    id INTEGER PRIMARY KEY,
-    title TEXT,
-    year TEXT,
-    genres TEXT,
-    synopsis TEXT,
-    trailer_id TEXT,
-    liked_at INTEGER
-  )
-`).run();
-
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS watched_anime (
-    id INTEGER PRIMARY KEY,
-    title TEXT,
-    watched_at INTEGER
-  )
-`).run();
-
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS disliked_anime (
-    id INTEGER PRIMARY KEY,
-    title TEXT,
-    disliked_at INTEGER
-  )
-`).run();
+const db = new Database('./anime.db'); // adjust path if needed
+db.pragma('journal_mode = WAL');
 
 // --------------------
-// Watched helpers
+// Auto-create tables if missing
 // --------------------
-export function getWatchedIds() {
-  const rows = db.prepare(`SELECT id FROM watched_anime`).all();
-  return rows.map(r => r.id);
-}
-
-export function markWatched(item) {
+function initTables() {
   db.prepare(`
-    INSERT OR REPLACE INTO watched_anime (id, title, watched_at)
-    VALUES (?, ?, ?)
-  `).run(item.id, item.title, Date.now());
-}
+    CREATE TABLE IF NOT EXISTS liked (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      genres TEXT,
+      likedAt TEXT,
+      language_code TEXT
+    )
+  `).run();
 
-// --------------------
-// Liked helpers
-// --------------------
-export function likeAnime(item) {
   db.prepare(`
-    INSERT OR REPLACE INTO liked_anime (id, title, year, genres, synopsis, trailer_id, liked_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    item.id,
-    item.title,
-    String(item.year ?? ''),
-    JSON.stringify(item.genres ?? []),
-    item.synopsis ?? '',
-    item.trailerId ?? null,
-    Date.now()
-  );
-}
+    CREATE TABLE IF NOT EXISTS disliked (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      language_code TEXT
+    )
+  `).run();
 
-export function unlikeAnime(id) {
-  db.prepare(`DELETE FROM liked_anime WHERE id = ?`).run(id);
-}
-
-export function getLikedAnime() {
-  const rows = db.prepare(`SELECT * FROM liked_anime ORDER BY liked_at DESC`).all();
-  return rows.map(r => ({
-    id: r.id,
-    title: r.title,
-    year: r.year,
-    genres: JSON.parse(r.genres || '[]'),
-    synopsis: r.synopsis,
-    trailerId: r.trailer_id
-  }));
-}
-
-// --------------------
-// Disliked helpers
-// --------------------
-export function dislikeAnime(item) {
   db.prepare(`
-    INSERT OR REPLACE INTO disliked_anime (id, title, disliked_at)
-    VALUES (?, ?, ?)
-  `).run(item.id, item.title, Date.now());
+    CREATE TABLE IF NOT EXISTS watched (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      language_code TEXT
+    )
+  `).run();
 }
 
-export function getDislikedIds() {
-  const rows = db.prepare(`SELECT id FROM disliked_anime`).all();
-  return rows.map(r => r.id);
+initTables();
+
+// --------------------
+// Utility: check if a column exists in a table
+// --------------------
+function columnExists(table, column) {
+  try {
+    const pragma = db.prepare(`PRAGMA table_info(${table})`).all();
+    return pragma.some(col => col.name === column);
+  } catch (err) {
+    console.error(`⚠️ Could not check columns for ${table}:`, err.message);
+    return false;
+  }
 }
 
-export function removeDislike(id) {
-  db.prepare(`DELETE FROM disliked_anime WHERE id = ?`).run(id);
+// --------------------
+// Likes
+// --------------------
+export function likeAnime(anime) {
+  const hasLangCol = columnExists('liked', 'language_code');
+  if (hasLangCol) {
+    db.prepare(
+      `INSERT OR REPLACE INTO liked (id, title, genres, likedAt, language_code)
+       VALUES (@id, @title, @genres, @likedAt, @language_code)`
+    ).run({
+      ...anime,
+      language_code: anime.lang || 'en'
+    });
+  } else {
+    db.prepare(
+      `INSERT OR REPLACE INTO liked (id, title, genres, likedAt)
+       VALUES (@id, @title, @genres, @likedAt)`
+    ).run(anime);
+  }
+}
+
+export function getLikedAnime(lang = 'en') {
+  const hasLangCol = columnExists('liked', 'language_code');
+  if (hasLangCol) {
+    return db.prepare(`SELECT * FROM liked WHERE language_code = ?`).all(lang);
+  }
+  return db.prepare(`SELECT * FROM liked`).all();
+}
+
+export function unlikeAnime(id, lang = 'en') {
+  const hasLangCol = columnExists('liked', 'language_code');
+  if (hasLangCol) {
+    db.prepare(`DELETE FROM liked WHERE id = ? AND language_code = ?`).run(id, lang);
+  } else {
+    db.prepare(`DELETE FROM liked WHERE id = ?`).run(id);
+  }
+}
+
+// --------------------
+// Dislikes
+// --------------------
+export function dislikeAnime(anime) {
+  const hasLangCol = columnExists('disliked', 'language_code');
+  if (hasLangCol) {
+    db.prepare(
+      `INSERT OR REPLACE INTO disliked (id, title, language_code)
+       VALUES (@id, @title, @language_code)`
+    ).run({
+      ...anime,
+      language_code: anime.lang || 'en'
+    });
+  } else {
+    db.prepare(
+      `INSERT OR REPLACE INTO disliked (id, title)
+       VALUES (@id, @title)`
+    ).run(anime);
+  }
+}
+
+export function getDislikedIds(lang = 'en') {
+  const hasLangCol = columnExists('disliked', 'language_code');
+  if (hasLangCol) {
+    return db.prepare(`SELECT id FROM disliked WHERE language_code = ?`)
+      .all(lang)
+      .map(row => row.id);
+  }
+  return db.prepare(`SELECT id FROM disliked`).all().map(row => row.id);
+}
+
+// --------------------
+// Watched
+// --------------------
+export function markWatched(anime) {
+  const hasLangCol = columnExists('watched', 'language_code');
+  if (hasLangCol) {
+    db.prepare(
+      `INSERT OR REPLACE INTO watched (id, title, language_code)
+       VALUES (@id, @title, @language_code)`
+    ).run({
+      ...anime,
+      language_code: anime.lang || 'en'
+    });
+  } else {
+    db.prepare(
+      `INSERT OR REPLACE INTO watched (id, title)
+       VALUES (@id, @title)`
+    ).run(anime);
+  }
+}
+
+export function getWatchedIds(lang = 'en') {
+  const hasLangCol = columnExists('watched', 'language_code');
+  if (hasLangCol) {
+    return db.prepare(`SELECT id FROM watched WHERE language_code = ?`)
+      .all(lang)
+      .map(row => row.id);
+  }
+  return db.prepare(`SELECT id FROM watched`).all().map(row => row.id);
 }

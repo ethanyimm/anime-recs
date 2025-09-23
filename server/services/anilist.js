@@ -36,15 +36,32 @@ async function anilistQuery(query, variables = {}, cacheKey) {
 }
 
 // --------------------
+// Helper: Select title based on language
+// --------------------
+function selectTitleByLang(titleObj, lang) {
+  switch (lang) {
+    case 'ja':
+      return titleObj.native || titleObj.romaji || titleObj.english;
+    case 'en':
+      return titleObj.english || titleObj.romaji || titleObj.native;
+    case 'ko':
+      // AniList doesn't have Korean titles, fallback to romaji/english
+      return titleObj.romaji || titleObj.english || titleObj.native;
+    default:
+      return titleObj.english || titleObj.romaji || titleObj.native;
+  }
+}
+
+// --------------------
 // Get currently airing anime (paginated) with NSFW filter
 // --------------------
-export async function getTopCurrentAnime(page = 1, perPage = 100) {
+export async function getTopCurrentAnime(page = 1, perPage = 100, lang = 'en') {
   const query = `
     query ($page: Int, $perPage: Int) {
       Page(page: $page, perPage: $perPage) {
         media(type: ANIME, sort: POPULARITY_DESC, status: RELEASING) {
           id
-          title { romaji english }
+          title { romaji english native }
           seasonYear
           genres
           description
@@ -53,12 +70,12 @@ export async function getTopCurrentAnime(page = 1, perPage = 100) {
       }
     }
   `;
-  const data = await anilistQuery(query, { page, perPage }, `topCurrent:${page}:${perPage}`);
+  const data = await anilistQuery(query, { page, perPage }, `topCurrent:${page}:${perPage}:${lang}`);
   return data?.Page?.media
     ?.filter(m => !m.isAdult) // NSFW filter
     .map(m => ({
       id: m.id,
-      title: m.title.english || m.title.romaji,
+      title: selectTitleByLang(m.title, lang),
       year: m.seasonYear || '',
       genres: m.genres || [],
       synopsis: m.description?.replace(/<[^>]+>/g, '') || ''
@@ -68,13 +85,13 @@ export async function getTopCurrentAnime(page = 1, perPage = 100) {
 // --------------------
 // Get trending anime (paginated) with NSFW filter
 // --------------------
-export async function getTrendingAnime(page = 1, perPage = 100) {
+export async function getTrendingAnime(page = 1, perPage = 100, lang = 'en') {
   const query = `
     query ($page: Int, $perPage: Int) {
       Page(page: $page, perPage: $perPage) {
         media(sort: TRENDING_DESC, type: ANIME) {
           id
-          title { romaji english }
+          title { romaji english native }
           seasonYear
           genres
           description
@@ -83,12 +100,12 @@ export async function getTrendingAnime(page = 1, perPage = 100) {
       }
     }
   `;
-  const data = await anilistQuery(query, { page, perPage }, `trending:${page}:${perPage}`);
+  const data = await anilistQuery(query, { page, perPage }, `trending:${page}:${perPage}:${lang}`);
   return data?.Page?.media
     ?.filter(m => !m.isAdult) // NSFW filter
     .map(m => ({
       id: m.id,
-      title: m.title.english || m.title.romaji,
+      title: selectTitleByLang(m.title, lang),
       year: m.seasonYear || '',
       genres: m.genres || [],
       synopsis: m.description?.replace(/<[^>]+>/g, '') || ''
@@ -96,9 +113,15 @@ export async function getTrendingAnime(page = 1, perPage = 100) {
 }
 
 // --------------------
-// Existing functions remain unchanged
+// Existing functions updated to accept lang
 // --------------------
 export async function getAnimeId(title) { /* ... */ }
+
 export async function getRecommendationsById(id) { /* ... */ }
-export async function getRecommendedAnime(seedTitle) { /* ... */ }
-export async function getFilteredRecommendations(seedTitle) { /* ... */ }
+
+export async function getRecommendedAnime(seedTitle, lang = 'en') { /* ... */ }
+
+export async function getFilteredRecommendations(seedTitle, lang = 'en') {
+  // Example: update your existing query to request romaji/english/native and use selectTitleByLang
+  /* ... */
+}

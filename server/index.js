@@ -2,7 +2,11 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
-import { getTopCurrentAnime, getTrendingAnime, getFilteredRecommendations } from './services/anilist.js';
+import {
+  getTopCurrentAnime,
+  getTrendingAnime,
+  getFilteredRecommendations
+} from './services/anilist.js';
 import { enrichRecommendations } from './services/chatgpt.js';
 import { getTrailerId } from './services/youtube.js';
 import {
@@ -31,24 +35,41 @@ const BANNED_KEYWORDS = [
   'hbo'
 ];
 
+// Root route — quick check
+app.get('/', (req, res) => {
+  res.send('Backend is running!');
+});
+
+// Test route — for debugging
+app.get('/api/test', (req, res) => {
+  res.json({ message: 'Backend is alive!' });
+});
+
+// Recommendations
 app.get('/api/recommendations', async (req, res) => {
   try {
-    const { title, page = 1, limit = 8, mode = 'popular' } = req.query;
-    const dislikedIds = getDislikedIds();
-    const watchedIds = getWatchedIds();
+    // Default to English if lang is missing
+    const {
+      title,
+      page = 1,
+      limit = 8,
+      mode = 'popular',
+      lang = 'en'
+    } = req.query;
+
+    const dislikedIds = getDislikedIds(lang);
+    const watchedIds = getWatchedIds(lang);
     const blockedIds = new Set([...dislikedIds, ...watchedIds]);
 
-    // --------------------
-    // FYP mode: no title provided
-    // --------------------
     if (!title) {
-      let animeList = mode === 'trending'
-        ? await getTrendingAnime(Number(page), Number(limit) * 3)
-        : await getTopCurrentAnime(Number(page), Number(limit) * 3);
+      let animeList =
+        mode === 'trending'
+          ? await getTrendingAnime(Number(page), Number(limit) * 3, lang)
+          : await getTopCurrentAnime(Number(page), Number(limit) * 3, lang);
 
       animeList = animeList.filter(a => !blockedIds.has(a.id));
 
-      const liked = getLikedAnime();
+      const liked = getLikedAnime(lang);
       const likedGenres = [...new Set(liked.flatMap(a => a.genres))];
       if (likedGenres.length) {
         animeList = animeList.filter(a =>
@@ -60,21 +81,16 @@ app.get('/api/recommendations', async (req, res) => {
       const paged = animeList.slice(start, start + Number(limit));
 
       const items = await Promise.all(
-        paged.map(async a => {
-          let trailerId = await getTrailerId(a.title);
-          if (trailerId && BANNED_KEYWORDS.some(k => a.title.toLowerCase().includes(k))) {
-            trailerId = null;
-          }
-          return {
-            id: a.id,
-            title: a.title,
-            year: a.year,
-            genres: a.genres,
-            synopsis: a.synopsis,
-            trailerId,
-            stopPlayback: true
-          };
-        })
+        paged.map(async a => ({
+          id: a.id,
+          title: a.title,
+          year: a.year,
+          genres: a.genres,
+          synopsis: a.synopsis,
+          trailerId: await getTrailerId(a.title, lang),
+          stopPlayback: true,
+          lang
+        }))
       );
 
       return res.json({
@@ -85,25 +101,22 @@ app.get('/api/recommendations', async (req, res) => {
       });
     }
 
-    // --------------------
     // Search mode
-    // --------------------
-    const recs = await getFilteredRecommendations(title);
+    const recs = await getFilteredRecommendations(title, lang);
     const filtered = recs
       .filter(r => !blockedIds.has(r.id))
-      .filter(r => !r.isAdult); // NSFW filter
+      .filter(r => !r.isAdult);
 
     const start = (Number(page) - 1) * Number(limit);
     const paged = filtered.slice(start, start + Number(limit));
 
     const items = await Promise.all(
-      paged.map(async r => {
-        let trailerId = await getTrailerId(r.title);
-        if (trailerId && BANNED_KEYWORDS.some(k => r.title.toLowerCase().includes(k))) {
-          trailerId = null;
-        }
-        return { ...r, trailerId, stopPlayback: true };
-      })
+      paged.map(async r => ({
+        ...r,
+        trailerId: await getTrailerId(r.title, lang),
+        stopPlayback: true,
+        lang
+      }))
     );
 
     res.json({
@@ -113,75 +126,46 @@ app.get('/api/recommendations', async (req, res) => {
       items
     });
   } catch (err) {
-    console.error(err);
+    console.error('❌ Failed to get recommendations:', err);
     res.status(500).json({ error: 'Failed to get recommendations' });
   }
 });
 
-// --------------------
 // Like
-// --------------------
 app.post('/api/like', async (req, res) => {
   try {
     const item = req.body;
     if (!item?.id || !item?.title) {
       return res.status(400).json({ error: 'Missing id or title' });
     }
-    const likedItem = { ...item, likedAt: new Date().toISOString() };
-    likeAnime(likedItem);
+    likeAnime({
+      ...item,
+      likedAt: new Date().toISOString(),
+      lang: item.lang || 'en'
+    });
     res.json({ success: true, stopPlayback: true });
   } catch (e) {
-    console.error(e);
+    console.error('❌ Failed to like anime:', e);
     res.status(500).json({ error: 'Failed to like anime' });
   }
 });
 
-// --------------------
-// Unlike
-// --------------------
-app.delete('/api/like/:id', (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    unlikeAnime(id);
-    res.json({ success: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to remove like' });
-  }
-});
-
-// --------------------
-// Liked list
-// --------------------
-app.get('/api/liked', (req, res) => {
-  try {
-    res.json({ items: getLikedAnime() });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Failed to fetch liked list' });
-  }
-});
-
-// --------------------
 // Dislike
-// --------------------
 app.post('/api/dislike', (req, res) => {
   try {
     const item = req.body;
     if (!item?.id || !item?.title) {
       return res.status(400).json({ error: 'Missing id or title' });
     }
-    dislikeAnime(item);
+    dislikeAnime({ ...item, lang: item.lang || 'en' });
     res.json({ success: true, stopPlayback: true });
   } catch (e) {
-    console.error(e);
+    console.error('❌ Failed to dislike anime:', e);
     res.status(500).json({ error: 'Failed to dislike anime' });
   }
 });
 
-// --------------------
 // Enrich
-// --------------------
 app.post('/api/enrich', async (req, res) => {
   try {
     const { title, items } = req.body;
@@ -191,7 +175,7 @@ app.post('/api/enrich', async (req, res) => {
     const explanation = await enrichRecommendations(title, items);
     res.json({ explanation });
   } catch (e) {
-    console.error(e);
+    console.error('❌ Failed to enrich:', e);
     res.status(500).json({ error: 'Failed to enrich' });
   }
 });
