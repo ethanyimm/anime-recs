@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { getCachedRecommendations, setCachedRecommendations } from '../utils/cashe.js';
+import { getCachedRecommendations, setCachedRecommendations } from '../utils/cache.js';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
 
@@ -45,7 +45,6 @@ function selectTitleByLang(titleObj, lang) {
     case 'en':
       return titleObj.english || titleObj.romaji || titleObj.native;
     case 'ko':
-      // AniList doesn't have Korean titles, fallback to romaji/english
       return titleObj.romaji || titleObj.english || titleObj.native;
     default:
       return titleObj.english || titleObj.romaji || titleObj.native;
@@ -72,7 +71,7 @@ export async function getTopCurrentAnime(page = 1, perPage = 100, lang = 'en') {
   `;
   const data = await anilistQuery(query, { page, perPage }, `topCurrent:${page}:${perPage}:${lang}`);
   return data?.Page?.media
-    ?.filter(m => !m.isAdult) // NSFW filter
+    ?.filter(m => !m.isAdult)
     .map(m => ({
       id: m.id,
       title: selectTitleByLang(m.title, lang),
@@ -102,7 +101,7 @@ export async function getTrendingAnime(page = 1, perPage = 100, lang = 'en') {
   `;
   const data = await anilistQuery(query, { page, perPage }, `trending:${page}:${perPage}:${lang}`);
   return data?.Page?.media
-    ?.filter(m => !m.isAdult) // NSFW filter
+    ?.filter(m => !m.isAdult)
     .map(m => ({
       id: m.id,
       title: selectTitleByLang(m.title, lang),
@@ -113,15 +112,90 @@ export async function getTrendingAnime(page = 1, perPage = 100, lang = 'en') {
 }
 
 // --------------------
-// Existing functions updated to accept lang
+// Get anime ID by title
 // --------------------
-export async function getAnimeId(title) { /* ... */ }
+export async function getAnimeId(title) {
+  const query = `
+    query ($search: String) {
+      Media(search: $search, type: ANIME) {
+        id
+      }
+    }
+  `;
+  const data = await anilistQuery(query, { search: title }, `animeId:${title}`);
+  return data?.Media?.id || null;
+}
 
-export async function getRecommendationsById(id) { /* ... */ }
+// --------------------
+// Get recommendations by anime ID
+// --------------------
+export async function getRecommendationsById(id, lang = 'en') {
+  const query = `
+    query ($id: Int) {
+      Media(id: $id, type: ANIME) {
+        recommendations {
+          nodes {
+            mediaRecommendation {
+              id
+              title { romaji english native }
+              seasonYear
+              genres
+              description
+              isAdult
+            }
+          }
+        }
+      }
+    }
+  `;
+  const data = await anilistQuery(query, { id }, `recsById:${id}:${lang}`);
+  return data?.Media?.recommendations?.nodes
+    ?.map(n => n.mediaRecommendation)
+    ?.filter(m => m && !m.isAdult)
+    ?.map(m => ({
+      id: m.id,
+      title: selectTitleByLang(m.title, lang),
+      year: m.seasonYear || '',
+      genres: m.genres || [],
+      synopsis: m.description?.replace(/<[^>]+>/g, '') || ''
+    })) || [];
+}
 
-export async function getRecommendedAnime(seedTitle, lang = 'en') { /* ... */ }
+// --------------------
+// Get recommended anime by seed title
+// --------------------
+export async function getRecommendedAnime(seedTitle, lang = 'en') {
+  const id = await getAnimeId(seedTitle);
+  if (!id) return [];
+  return getRecommendationsById(id, lang);
+}
 
+// --------------------
+// Search + filter recommendations by seed title
+// --------------------
 export async function getFilteredRecommendations(seedTitle, lang = 'en') {
-  // Example: update your existing query to request romaji/english/native and use selectTitleByLang
-  /* ... */
+  const query = `
+    query ($search: String) {
+      Page(perPage: 20) {
+        media(search: $search, type: ANIME) {
+          id
+          title { romaji english native }
+          seasonYear
+          genres
+          description
+          isAdult
+        }
+      }
+    }
+  `;
+  const data = await anilistQuery(query, { search: seedTitle }, `filtered:${seedTitle}:${lang}`);
+  return data?.Page?.media
+    ?.filter(m => !m.isAdult)
+    .map(m => ({
+      id: m.id,
+      title: selectTitleByLang(m.title, lang),
+      year: m.seasonYear || '',
+      genres: m.genres || [],
+      synopsis: m.description?.replace(/<[^>]+>/g, '') || ''
+    })) || [];
 }

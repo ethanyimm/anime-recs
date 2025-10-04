@@ -1,3 +1,4 @@
+// index.js
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -17,14 +18,18 @@ import {
   getDislikedIds,
   getWatchedIds
 } from './utils/db.js';
+import {
+  getCachedRecommendations,
+  setCachedRecommendations
+} from './utils/cache.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(compression()); // 🔹 Enable GZIP compression
-app.set('etag', 'strong'); // 🔹 Enable strong ETag headers
+app.use(compression());
+app.set('etag', 'strong');
 
-// Keywords to block live-action trailers
+// Keywords to block live-action trailers (applied inside youtube service)
 const BANNED_KEYWORDS = [
   'live action',
   'official movie',
@@ -45,10 +50,38 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'Backend is alive!' });
 });
 
+// Helpers
+function normalizeGenres(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function deriveLikedGenres(lang = 'en') {
+  const liked = getLikedAnime(lang);
+  const all = liked.flatMap(a => normalizeGenres(a.genres));
+  return [...new Set(all)];
+}
+
+function scoreByGenreOverlap(itemGenres, likedGenres) {
+  if (!likedGenres.length) return 0;
+  const ig = normalizeGenres(itemGenres);
+  let overlap = 0;
+  for (const g of ig) {
+    if (likedGenres.includes(g)) overlap += 1;
+  }
+  return overlap;
+}
+
 // Recommendations
 app.get('/api/recommendations', async (req, res) => {
   try {
-    // Default to English if lang is missing
     const {
       title,
       page = 1,
@@ -57,28 +90,52 @@ app.get('/api/recommendations', async (req, res) => {
       lang = 'en'
     } = req.query;
 
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+
     const dislikedIds = getDislikedIds(lang);
     const watchedIds = getWatchedIds(lang);
     const blockedIds = new Set([...dislikedIds, ...watchedIds]);
+    const likedGenres = deriveLikedGenres(lang);
+    const genreKey = likedGenres.slice().sort().join('|') || 'none';
 
+    // Browse mode (no title): batch fetch, re-rank, lazy load, cache by preference profile
     if (!title) {
-      let animeList =
-        mode === 'trending'
-          ? await getTrendingAnime(Number(page), Number(limit) * 3, lang)
-          : await getTopCurrentAnime(Number(page), Number(limit) * 3, lang);
+      // Batch size: fetch more than needed to allow filtering and ranking headroom
+      const batchSize = limitNum * 4;
 
-      animeList = animeList.filter(a => !blockedIds.has(a.id));
+      const baseCacheKey = `browse:${mode}:batch:${batchSize}:lang:${lang}:genres:${genreKey}`;
+      // Try personalized candidates cache
+      let candidates = getCachedRecommendations(baseCacheKey);
 
-      const liked = getLikedAnime(lang);
-      const likedGenres = [...new Set(liked.flatMap(a => a.genres))];
-      if (likedGenres.length) {
-        animeList = animeList.filter(a =>
-          a.genres?.some(g => likedGenres.includes(g))
-        );
+      if (!candidates) {
+        const rawList =
+          mode === 'trending'
+            ? await getTrendingAnime(1, batchSize, lang)
+            : await getTopCurrentAnime(1, batchSize, lang);
+
+        // Filter NSFW is already handled in services; still filter blocked
+        const filtered = rawList.filter(a => !blockedIds.has(a.id));
+
+        // Re-rank by genre overlap (content-based)
+        const ranked = filtered
+          .map(a => ({
+            ...a,
+            score: scoreByGenreOverlap(a.genres, likedGenres)
+          }))
+          .sort((a, b) => b.score - a.score);
+
+        // Cache the ranked candidates BEFORE pagination (preference-aware)
+        setCachedRecommendations(baseCacheKey, ranked);
+        candidates = ranked;
+      } else {
+        // Even when using cached candidates, ensure we respect current blockedIds
+        candidates = candidates.filter(a => !blockedIds.has(a.id));
       }
 
-      const start = (Number(page) - 1) * Number(limit);
-      const paged = animeList.slice(start, start + Number(limit));
+      // Lazy load: paginate the ranked list
+      const start = (pageNum - 1) * limitNum;
+      const paged = candidates.slice(start, start + limitNum);
 
       const items = await Promise.all(
         paged.map(async a => ({
@@ -94,21 +151,31 @@ app.get('/api/recommendations', async (req, res) => {
       );
 
       return res.json({
-        page: Number(page),
-        limit: Number(limit),
-        hasMore: start + Number(limit) < animeList.length,
+        page: pageNum,
+        limit: limitNum,
+        hasMore: start + limitNum < candidates.length,
         items
       });
     }
 
-    // Search mode
+    // Search mode: delegate to filtered recommendations (should already respect NSFW)
+    // You can apply the same re-ranking here if desired.
     const recs = await getFilteredRecommendations(title, lang);
+
     const filtered = recs
       .filter(r => !blockedIds.has(r.id))
       .filter(r => !r.isAdult);
 
-    const start = (Number(page) - 1) * Number(limit);
-    const paged = filtered.slice(start, start + Number(limit));
+    // Optional: re-rank search results by genre overlap
+    const ranked = filtered
+      .map(r => ({
+        ...r,
+        score: scoreByGenreOverlap(r.genres, likedGenres)
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    const start = (pageNum - 1) * limitNum;
+    const paged = ranked.slice(start, start + limitNum);
 
     const items = await Promise.all(
       paged.map(async r => ({
@@ -120,9 +187,9 @@ app.get('/api/recommendations', async (req, res) => {
     );
 
     res.json({
-      page: Number(page),
-      limit: Number(limit),
-      hasMore: start + Number(limit) < filtered.length,
+      page: pageNum,
+      limit: limitNum,
+      hasMore: start + limitNum < ranked.length,
       items
     });
   } catch (err) {
@@ -162,6 +229,19 @@ app.post('/api/dislike', (req, res) => {
   } catch (e) {
     console.error('❌ Failed to dislike anime:', e);
     res.status(500).json({ error: 'Failed to dislike anime' });
+  }
+});
+
+// Optional: Unlike route (useful for completeness)
+app.post('/api/unlike', (req, res) => {
+  try {
+    const { id, lang = 'en' } = req.body;
+    if (!id) return res.status(400).json({ error: 'Missing id' });
+    unlikeAnime(id, lang);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('❌ Failed to unlike anime:', e);
+    res.status(500).json({ error: 'Failed to unlike anime' });
   }
 });
 
